@@ -359,6 +359,11 @@ def plot_posterior_draws(sn, lc_path='', out_path='', save_fig=True):
                 color = color_dict[pb], ls='--', lw=0.6, alpha=0.3)
     
         ax.set_xlabel('Time (JD - 2018 Jan 01)',fontsize=14)
+        x_max = np.min([pi_max_t0 + pi_max_gamma + 10*pi_max_tfall, 
+                   np.max(lc_df_thisfilt.jd.values) - jd0 + 10])
+        ax.set_xlim(pi_max_t0 - 75, x_max)
+        ax.set_ylim(-3*median_abs_deviation(lc_df_thisfilt.fnu_microJy.values), 
+                    1.2*np.percentile(lc_df_thisfilt.fnu_microJy.values, 99.5))
         ax.set_ylabel(r'Flux ($\mu$Jy)',fontsize=14)
         ax.tick_params(axis='both', which='major', labelsize=12)
         fig.subplots_adjust(left=0.8,bottom=0.13,right=0.99, top=0.99)
