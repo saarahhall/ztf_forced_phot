@@ -5,6 +5,7 @@ from numpyro import distributions as dist, infer
 import matplotlib.pyplot as plt
 import numpy as np
 import arviz as az
+import pandas as pd
 
 from scipy.stats import median_abs_deviation
 
@@ -177,7 +178,6 @@ def plot_posterior_draws_numpyro(sampler, sn, lc_path=''):
             color=color_dict[pb], ls='--', lw=0.6, alpha=0.3)
 
     ax.set_xlabel('Time (JD - 2018 Jan 01)', fontsize=14)
-    ax.set_xlim(20, 600)
     ax.set_ylim(-3 * median_abs_deviation(lc_df_thisfilt.fnu_microJy.values),
                 1.2 * jnp.percentile(lc_df_thisfilt.fnu_microJy.values, 99.5))
     ax.set_ylabel(r'Flux ($\mu$Jy)', fontsize=14)
