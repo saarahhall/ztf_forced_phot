@@ -10,6 +10,55 @@ import pandas as pd
 from scipy.stats import median_abs_deviation
 
 
+def calc_sn_exp_both(t, A, B, t0, gamma, trise, tfall, offset):
+    """
+    Calculate the rising and declining (hence _both) portions of the SN model from Villar+19
+
+    Parameters
+    ----------
+    t : array-like
+        Times at which the model is evaluated
+
+    A - float
+        Constant of proportionality
+
+    B - float
+        constant of proportionality
+
+    t0 - float
+        reference time for exponential rise
+
+    gamma - float
+        time of plateau onset minus t0
+
+    trise - float
+        exponential decay factor
+
+    tfall - float
+        exponential decay factor controlling the decline
+
+    offset - float
+        scalar offset relative to 0 flux
+
+    Returns
+    -------
+    f : array-like
+        Eqn (1) from Villar+19 for flux of SN evaluated at
+        times t
+
+    References
+    ----------
+    (1) V. A. Villar, E. Berger, G. Miller et al. (2019)
+    Astrophysical Journal, 884, 83; doi: 10.3847/1538-4357/ab418c
+    """
+    f = jnp.where(gamma + t0 >= t,
+                  ((A + B * (t - t0)) / (1 + jnp.exp(-(t - t0) / trise))) + offset,
+                  offset + ((A + B * gamma) *
+                            jnp.exp(-(t - (gamma + t0)) / tfall) /
+                            (1 + jnp.exp(-(t - t0) / trise))))
+    return f
+
+
 def load_lc_df(sn, lc_path, min_num_obs=10):
     """
     Load ZTF light curve (LC) into a dataframe, with quality cuts
@@ -22,11 +71,15 @@ def load_lc_df(sn, lc_path, min_num_obs=10):
     lc_path : string (optional, default = '')
         File path to folder containing processed fps lc files from Miller+24
 
+    min_num_obs : int (optional, default = 10)
+        If there are fewer than min_num_obs observations for any given filter,
+        exclude from output dataframe
+
     Returns
     -------
     lc_df_clean : pandas dataframe
         Dataframe of LC obs. with flags==0 and valid flux measurements. Entire
-        passbands may be excluded if there were fewer than 10 valid points
+        passbands may be excluded if there were fewer than min_num_obs valid points
     """
 
     lc_df = pd.read_csv(f"{lc_path}/{sn}_fnu.csv")
@@ -51,24 +104,24 @@ def load_lc_df(sn, lc_path, min_num_obs=10):
     return lc_df_clean
 
 
-def calc_sn_exp_both(t, A, B, t0, gamma, trise, tfall, offset):
-    f = jnp.where(gamma + t0 >= t,
-                  ((A + B * (t - t0)) / (1 + jnp.exp(-(t - t0) / trise))) + offset,
-                  offset + ((A + B * gamma) *
-                            jnp.exp(-(t - (gamma + t0)) / tfall) /
-                            (1 + jnp.exp(-(t - t0) / trise))))
-    return f
-
-
 def lc_model(t_val, Y_unc_val, Y_observed_val=None):
-    # sampling...
-    # Define priors based on Villar+19
-    # x_grid = jnp.logspace(-3, np.log10(60), 500)
-    # logistic_pdf = lambda x, tau, x0: 1/(1 + jnp.exp(-(x - x0)/tau))
-    trise = numpyro.sample("trise", dist.Uniform(low=0.01, high=50))  # dist.continuous.Uniform?
-    # pm.Interpolated('trise', x_grid,
-    #                logistic_pdf(x_grid, 5e-3, 0.1))
+    """
+    (Non-hierarchical) model for ZTF light curves, with priors loosely based on Villar+19
 
+    Parameters
+    ----------
+    t_val : array-like
+        Time values at which the model is evaluated
+
+    Y_unc_val : array-like
+        Flux uncertainties at the observed times t_val
+
+    Y_observed_val : array-like (optional, default = None)
+        Flux observations at times t_val
+    """
+
+    # Define priors based on Villar+19
+    trise = numpyro.sample("trise", dist.Uniform(low=0.01, high=50))  # dist.continuous.Uniform?
     tfall = numpyro.sample("tfall", dist.Uniform(low=1, high=300))
 
     Amp_Guess = jnp.max(Y_observed_val)
@@ -87,16 +140,25 @@ def lc_model(t_val, Y_unc_val, Y_observed_val=None):
                                                            low=-2 * sigma_est,
                                                            high=2 * sigma_est))
 
-    mixing_dist = dist.Categorical(probs=jnp.array([2 / 3, 1 / 3]))
-    component_dist = dist.Normal(loc=jnp.array([5, 60]), scale=jnp.array([5, 30]))
-    gamma = numpyro.sample("gamma", dist.MixtureSameFamily(mixing_distribution=mixing_dist,
-                                                           component_distribution=component_dist))
+    ## gamma's prior is a normal mixture - not straightforward in numpyro
+    # Define the weights for the mixture components
+    weights = jnp.array([2 / 3, 1 / 3])  # Should sum to 1
+    # Define means and standard deviations for the normal components
+    means, stds = jnp.array([5, 60]), jnp.array([5, 30])
+    # Define the normal distributions
+    components = [dist.Normal(mu, sigma) for mu, sigma in zip(means, stds)]
+    # Define the mixture distribution
+    mixture = dist.Mixture(
+        dist.Categorical(probs=weights),  # Mixture weights
+        components  # List of component distributions
+    )
+    gamma = numpyro.sample("gamma", mixture)
+
 
     # Expected value of outcome
     mu_switch = calc_sn_exp_both(t_val, Amplitude, Beta, t0, gamma, trise, tfall, scalar)
 
     # Sample!
-    # with numpyro.plate("data", len(t_val)):
     numpyro.sample("y",
                    dist.Normal(mu_switch, Y_unc_val),
                    obs=Y_observed_val)
@@ -196,7 +258,7 @@ def plot_posterior_draws_numpyro(filt_sampler_pairs, sn, lc_path=''):
         # posterior samples
         n_samples = len(chains.posterior.t0.values.flatten())
         rand_idx = np.random.choice(range(n_samples),
-                                    90, replace=False)
+                                    10, replace=False)
         pi_t0 = chains.posterior.t0.values.flatten()[rand_idx]
         pi_amp = chains.posterior.Amplitude.values.flatten()[rand_idx]
         pi_beta = chains.posterior.Beta.values.flatten()[rand_idx]
