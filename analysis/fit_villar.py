@@ -114,11 +114,15 @@ def load_lc_df(sn, lc_path, min_num_obs=10):
     lc_path : string (optional, default = '')
         File path to folder containing processed fps lc files from Miller+24
 
+    min_num_obs : int (optional, default = 10)
+        If there are fewer than min_num_obs observations for any given filter,
+        exclude from output dataframe
+
     Returns
     -------
     lc_df_clean : pandas dataframe
         Dataframe of LC obs. with flags==0 and valid flux measurements. Entire 
-        passbands may be excluded if there were fewer than 10 valid points
+        passbands may be excluded if there were fewer than min_num_obs valid points
     '''
 
     lc_df = pd.read_csv(f"{lc_path}/{sn}_fnu.csv")
