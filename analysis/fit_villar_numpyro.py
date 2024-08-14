@@ -163,19 +163,28 @@ def lc_model(t_val, Y_unc_val, Y_observed_val=None):
                    dist.Normal(mu_switch, Y_unc_val),
                    obs=Y_observed_val)
 
-def lc_model_hier_oneSN(t_val, Y_unc_val, Y_observed_val=None):# find a way to add this -> within numpyro model structure hier_vars=[]):
-    # sampling...
+def lc_model_hier_oneSN(t_val, Y_unc_val, Y_observed_val=None):
+    """
+    Work in progress!!
+    Hierarchical model for ZTF light curves, with priors loosely based on Villar+19
+
+    Parameters
+    ----------
+    t_val : array-like
+        Time values at which the model is evaluated
+
+    Y_unc_val : array-like
+        Flux uncertainties at the observed times t_val
+
+    Y_observed_val : array-like (optional, default = None)
+        Flux observations at times t_val
+    """
+
     # Define priors based on Villar+19
-    # x_grid = jnp.logspace(-3, np.log10(60), 500)
-    # logistic_pdf = lambda x, tau, x0: 1/(1 + jnp.exp(-(x - x0)/tau))
-    # pm.Interpolated('trise', x_grid,
-    #                logistic_pdf(x_grid, 5e-3, 0.1))
-    #if 'trise' in hier_vars:
     trise_low = numpyro.sample("trise_low", dist.Uniform(low=5e-3, high=0.02))
     trise_high = numpyro.sample("trise_high", dist.Uniform(low=45, high=55))
     trise = numpyro.sample("trise", dist.Uniform(low=trise_low, high=trise_high)) #0.01,50 # dist.continuous.Uniform?
-    #else:
-    #    trise = numpyro.sample("trise", dist.Uniform(low=0.01, high=50))
+
 
     tfall_low = numpyro.sample("tfall_low", dist.Uniform(low=0.5, high=1.5))
     tfall_high = numpyro.sample("tfall_high", dist.Uniform(low=295, high=305))
@@ -202,10 +211,19 @@ def lc_model_hier_oneSN(t_val, Y_unc_val, Y_observed_val=None):# find a way to a
                                                            low=-2 * sigma_est,
                                                            high=2 * sigma_est))
 
-    mixing_dist = dist.Categorical(probs=jnp.array([2 / 3, 1 / 3]))
-    component_dist = dist.Normal(loc=jnp.array([5, 60]), scale=jnp.array([5, 30]))
-    gamma = numpyro.sample("gamma", dist.MixtureSameFamily(mixing_distribution=mixing_dist,
-                                                           component_distribution=component_dist))
+    ## gamma's prior is a normal mixture - not straightforward in numpyro
+    # Define the weights for the mixture components
+    weights = jnp.array([2 / 3, 1 / 3])  # Should sum to 1
+    # Define means and standard deviations for the normal components
+    means, stds = jnp.array([5, 60]), jnp.array([5, 30])
+    # Define the normal distributions
+    components = [dist.Normal(mu, sigma) for mu, sigma in zip(means, stds)]
+    # Define the mixture distribution
+    mixture = dist.Mixture(
+        dist.Categorical(probs=weights),  # Mixture weights
+        components  # List of component distributions
+    )
+    gamma = numpyro.sample("gamma", mixture)
 
     # Expected value of outcome
     mu_switch = calc_sn_exp_both(t_val, Amplitude, Beta, t0, gamma, trise, tfall, scalar)
