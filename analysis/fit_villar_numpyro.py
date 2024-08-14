@@ -1,3 +1,4 @@
+import jax
 import jax.numpy as jnp
 import numpyro
 from numpyro import distributions as dist, infer
@@ -163,6 +164,68 @@ def lc_model(t_val, Y_unc_val, Y_observed_val=None):
                    dist.Normal(mu_switch, Y_unc_val),
                    obs=Y_observed_val)
 
+def fit_gr(sn, lc_path, out_path, num_warmup=15000, num_samples=1000, num_chains=2, model=lc_model):
+    """
+    Fit parametric model from Villar+19 to ZTF light curve
+
+    Parameters
+    ----------
+    sn : string
+        ZTF name of the SN to be fit by the model
+
+    lc_path : string (optional, default = '')
+        File path to folder containing processed fps lc files from Miller+24
+
+    out_path : string (optional, default = '')
+        File path to write output files (MCMC chains and summary statistics)
+
+    num_warmup : int (optional, default = 1500)
+        Number of warmup steps to run MCMC chains for
+
+    num_samples : int (optional, default = 1000)
+        Number of samples to run MCMC chains for
+
+    num_chains : int (optional, default = 2)
+        Number of chains to run MCMC, make sure num_chains =< jax.local_device_count()
+        ( you can change device count using: numpyro.set_host_device_count(#) )
+
+
+    model : function (optional, default = lc_model)
+        numpyro modeling function, either hierarchical (WIP) or non-hierarchical (lc_model)
+    """
+
+    # load dataframe with some quality cuts
+    lc_df = load_lc_df(sn=sn, lc_path=lc_path)
+
+    for pb in lc_df.passband.unique():
+        filt = pb[-1]
+
+        # Fit the model with the current filter
+        lc_df_thisfilt = lc_df[(lc_df["passband"] == f'ZTF_{filt}')]
+
+        jd0 = 2458119.5  # 2018 Jan 01
+        time_axis = (lc_df_thisfilt['jd'].values) - jd0
+
+        Y_observed = ((lc_df_thisfilt['fnu_microJy']).values)
+
+        Y_unc = ((lc_df_thisfilt['fnu_microJy_unc']).values)
+
+        sampler = infer.MCMC(
+            infer.NUTS(model),
+            num_warmup=num_warmup,
+            num_samples=num_samples,
+            num_chains=num_chains,
+            progress_bar=True)
+
+        # Draw samples from the posterior
+        sampler.run(jax.random.PRNGKey(0), time_axis, Y_unc, Y_observed_val=Y_observed)
+        # Save results
+        data = az.from_numpyro(sampler)
+        data.to_netcdf(f"{out_path}/{sn}_{filt}_numpyro.nc")
+        out_summary = f"{out_path}/{sn}_{filt}_numpyro.csv"
+        az.summary(data, stat_focus='median').to_csv(out_summary)
+
+
 def lc_model_hier_oneSN(t_val, Y_unc_val, Y_observed_val=None):
     """
     Work in progress!!
@@ -235,20 +298,23 @@ def lc_model_hier_oneSN(t_val, Y_unc_val, Y_observed_val=None):
                    obs=Y_observed_val)
 
 
-def plot_posterior_draws_numpyro(filt_sampler_pairs, sn, lc_path=''):
+def plot_posterior_draws_numpyro(sn, lc_path='', out_path='', save_fig=True):
     """
     Plot posterior draws of model from Villar+19 to ZTF light curve
 
     Parameters
     ----------
-    sampler: infer.MCMC object
-        sampler run using `lc_model`
-
     sn : string
         ZTF name of the SN to be fit by the model
 
     lc_path : string (optional, default = '')
         File path to folder containing processed fps lc files from Miller+24
+
+    out_path : string (optional, default = '')
+        File path to files saved by fit_gr()  (MCMC chains and summary statistics)
+
+    save_fig : boolean (optional, default = True)
+        Boolean flag indicating whether or not to save the plot as a png
     """
     color_dict = {'ZTF_g': "MediumAquaMarine",
                   'ZTF_r': "Crimson",
@@ -256,18 +322,18 @@ def plot_posterior_draws_numpyro(filt_sampler_pairs, sn, lc_path=''):
 
     lc_df = load_lc_df(sn, lc_path)
     fig, ax = plt.subplots(figsize=(10, 4))
-    for pair in filt_sampler_pairs:
-        filt, sampler = pair
-        pb = 'ZTF_'+filt
+    for pb in lc_df.passband.unique():
+        filt = pb[-1]
 
         lc_df_thisfilt = lc_df[(lc_df["passband"] == f'ZTF_{filt}')]
 
         jd0 = 2458119.5  # 2018 Jan 01
 
         try:
-            chains = az.from_numpyro(sampler)  # az.from_netcdf(f"{out_path}/{sn}_{filt}.nc")
+            chains = az.from_netcdf(f"{out_path}/{sn}_{filt}.nc")
         except:
             print(f'Unable to find chains for {sn} in {pb}, skipping this filter.')
+            continue
         ax.errorbar(lc_df_thisfilt.jd.values - jd0,
                     lc_df_thisfilt.fnu_microJy.values,
                     lc_df_thisfilt.fnu_microJy_unc.values,
@@ -285,24 +351,11 @@ def plot_posterior_draws_numpyro(filt_sampler_pairs, sn, lc_path=''):
         pi_tfall = chains.posterior.tfall.values.flatten()[rand_idx]
         pi_scalar = chains.posterior.scalar.values.flatten()[rand_idx]
 
-        t_grid_rise = jnp.linspace(pi_t0 - 150,
-                                   pi_t0 + pi_gamma,
-                                   num=10000)
-        ax.plot(t_grid_rise,
-                calc_sn_exp_both(t_grid_rise,
-                                 pi_amp,
-                                 pi_beta,
-                                 pi_t0,
-                                 pi_gamma,
-                                 pi_trise,
-                                 pi_tfall,
-                                 pi_scalar),
-                color=color_dict[pb], ls='--', lw=0.6, alpha=0.3)
-        t_grid_decline = jnp.linspace(pi_t0 + pi_gamma,
-                                      jnp.max(lc_df_thisfilt.jd.values) - jd0,
-                                      num=10000)
-        ax.plot(t_grid_decline,
-                calc_sn_exp_both(t_grid_decline,
+        t_grid = jnp.linspace(pi_t0 - 150,
+                              jnp.max(lc_df_thisfilt.jd.values) - jd0,
+                              num=20000)
+        ax.plot(t_grid,
+                calc_sn_exp_both(t_grid,
                                  pi_amp,
                                  pi_beta,
                                  pi_t0,
@@ -313,8 +366,15 @@ def plot_posterior_draws_numpyro(filt_sampler_pairs, sn, lc_path=''):
                 color=color_dict[pb], ls='--', lw=0.6, alpha=0.3)
 
         ax.set_xlabel('Time (JD - 2018 Jan 01)', fontsize=14)
+        # xlim may be unstable, since we're picking a random posterior instead of the max. prob. posterior
+        x_max = np.min([pi_t0[0] + pi_gamma[0] + 10 * pi_tfall[0],
+                        np.max(lc_df_thisfilt.jd.values) - jd0 + 10])
+        ax.set_xlim(pi_t0[0] - 75, x_max)
         ax.set_ylim(-3 * median_abs_deviation(lc_df_thisfilt.fnu_microJy.values),
                     1.2 * jnp.percentile(lc_df_thisfilt.fnu_microJy.values, 99.5))
         ax.set_ylabel(r'Flux ($\mu$Jy)', fontsize=14)
         ax.tick_params(axis='both', which='major', labelsize=12)
         fig.subplots_adjust(left=0.8, bottom=0.13, right=0.99, top=0.99)
+        if save_fig:
+            fig.savefig(f"{lc_path}/{sn}_posterior_numpyro.png",
+                        dpi=600, transparent=True)
