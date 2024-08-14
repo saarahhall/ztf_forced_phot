@@ -165,7 +165,7 @@ def lc_model(t_val, Y_unc_val, Y_observed_val=None):
                    dist.Normal(mu_switch, Y_unc_val),
                    obs=Y_observed_val)
 
-def fit_gr(sn, lc_path, out_path, num_warmup=15000, num_samples=1000, num_chains=2, model=lc_model):
+def fit_gr_numpyro(sn, lc_path, out_path, num_warmup=15000, num_samples=1000, num_chains=4, model=lc_model):
     """
     Fit parametric model from Villar+19 to ZTF light curve
 
@@ -393,7 +393,12 @@ def main():
                    help='path to folder containing processed fps lc file from Miller+24')
     parser.add_argument('out_path', type=str, nargs='?', default=None,
                    help='path for output MCMC chains')
-
+    parser.add_argument('num_warmup', type=int, nargs='?', default=None,
+                        help='number of warmup steps for MCMC')
+    parser.add_argument('num_samples', type=int, nargs='?', default=None,
+                        help='number of samples for MCMC')
+    parser.add_argument('num_chains', type=int, nargs='?', default=None,
+                        help='number of chains for MCMC')
 
     try:
         args = parser.parse_args()
@@ -403,7 +408,7 @@ def main():
         run = False
 
     if run:
-        fit_gr(**vars(args))
+        fit_gr_numpyro(**vars(args))
 
 if __name__ == "__main__":
     main()
