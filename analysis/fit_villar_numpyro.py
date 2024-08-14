@@ -7,8 +7,9 @@ import matplotlib.pyplot as plt
 import numpy as np
 import arviz as az
 import pandas as pd
-
 from scipy.stats import median_abs_deviation
+
+import argparse
 
 
 def calc_sn_exp_both(t, A, B, t0, gamma, trise, tfall, offset):
@@ -330,7 +331,7 @@ def plot_posterior_draws_numpyro(sn, lc_path='', out_path='', save_fig=True):
         jd0 = 2458119.5  # 2018 Jan 01
 
         try:
-            chains = az.from_netcdf(f"{out_path}/{sn}_{filt}.nc")
+            chains = az.from_netcdf(f"{out_path}/{sn}_{filt}_numpyro.nc")
         except:
             print(f'Unable to find chains for {sn} in {pb}, skipping this filter.')
             continue
@@ -378,3 +379,31 @@ def plot_posterior_draws_numpyro(sn, lc_path='', out_path='', save_fig=True):
         if save_fig:
             fig.savefig(f"{lc_path}/{sn}_posterior_numpyro.png",
                         dpi=600, transparent=True)
+
+def main():
+
+    # Initialize argument parser
+    parser = argparse.ArgumentParser(prog='fit_villar_numpyro.py <sn>',
+                                     description='Run Villar+19 light curve fits on a BTS fps lc. with numpyro')
+    # Necessary arguments
+    parser.add_argument('sn', type=str, nargs='?', default=None,
+                   help='ZTF transient name')
+    # Optional arguments
+    parser.add_argument('lc_path', type=str, nargs='?', default=None,
+                   help='path to folder containing processed fps lc file from Miller+24')
+    parser.add_argument('out_path', type=str, nargs='?', default=None,
+                   help='path for output MCMC chains')
+
+
+    try:
+        args = parser.parse_args()
+
+        run = True
+    except Exception:
+        run = False
+
+    if run:
+        fit_gr(**vars(args))
+
+if __name__ == "__main__":
+    main()
