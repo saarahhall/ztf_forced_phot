@@ -368,8 +368,8 @@ def plot_posterior_draws_numpyro(sn, lc_path='', out_path='', save_fig=True):
 
         ax.set_xlabel('Time (JD - 2018 Jan 01)', fontsize=14)
         # xlim may be unstable, since we're picking a random posterior instead of the max. prob. posterior
-        x_max = jnp.min([pi_t0[0] + pi_gamma[0] + 10 * pi_tfall[0],
-                        jnp.max(lc_df_thisfilt.jd.values) - jd0 + 10])
+        x_max = np.min([pi_t0[0] + pi_gamma[0] + 10 * pi_tfall[0],
+                        np.max(lc_df_thisfilt.jd.values) - jd0 + 10])
         ax.set_xlim(pi_t0[0] - 75, x_max)
         ax.set_ylim(-3 * median_abs_deviation(lc_df_thisfilt.fnu_microJy.values),
                     1.2 * jnp.percentile(lc_df_thisfilt.fnu_microJy.values, 99.5))
