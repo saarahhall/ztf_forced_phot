@@ -239,7 +239,8 @@ def fit_gr(sn, lc_path='', out_path=''):
             Y_obs = pm.Normal('Y_obs', mu=mu_switch, 
                               sigma=Y_unc, observed=Y_observed)
             # Draw samples from the posterior
-            data = pm.sample(1000, tune = 15000, cores = 4, 
+            data = pm.sample(1000, tune = 15000, cores = 4,
+                             discard_tuned_samples=False,
                              return_inferencedata=True, 
                              progressbar = True, 
                              target_accept=0.99)
@@ -370,7 +371,7 @@ def plot_posterior_draws(sn, lc_path='', out_path='', save_fig=True):
                     1.2*np.percentile(lc_df_thisfilt.fnu_microJy.values, 99.5))
         ax.set_ylabel(r'Flux ($\mu$Jy)',fontsize=14)
         ax.tick_params(axis='both', which='major', labelsize=12)
-        fig.subplots_adjust(left=0.8,bottom=0.13,right=0.99, top=0.99)
+        #fig.subplots_adjust(left=0.8,bottom=0.13,right=0.99, top=0.99)
     if save_fig:
         fig.savefig(f"{lc_path}/{sn}_posterior.png", 
                     dpi = 600, transparent=True)
