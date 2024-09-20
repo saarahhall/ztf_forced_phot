@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import arviz as az
 import pandas as pd
-from scipy.stats import median_abs_deviation
+from scipy.stats import median_abs_deviation, truncnorm, rv_continuous, norm
 from numpyro.infer.initialization import init_to_mean, init_to_uniform
 
 import argparse
@@ -315,6 +315,65 @@ def lc_model_hier_oneSN(t_val, Y_unc_val, Y_observed_val=None):
                    dist.Normal(mu_switch, Y_unc_val),
                    obs=Y_observed_val)
 
+# --- functions we need to calculate posterior from numpyro chains ---
+class MixtureModel(rv_continuous):
+    def __init__(self, submodels, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.submodels = submodels
+
+    def _pdf(self, x):
+        pdf = self.submodels[0].pdf(x)
+        for submodel in self.submodels[1:]:
+            pdf += submodel.pdf(x)
+        pdf /= len(self.submodels)
+        return pdf
+
+    def rvs(self, size):
+        submodel_choices = np.random.randint(len(self.submodels), size=size)
+        submodel_samples = [submodel.rvs(size=size) for submodel in self.submodels]
+        rvs = np.choose(submodel_choices, submodel_samples)
+        return rvs
+
+
+def posterior_from_chains(chains_filt, y_obs_filt, y_unc_filt):
+    """
+    for one filter, calculate posterior (at every step in every chain)
+    """
+    # posterior = prior * likelihood
+    ## grab likelihoods from chains, define priors from scratch
+
+    # define log likelihood for the (4) chains
+    summed = np.sum(chains_filt.log_likelihood.y.values, axis=2)
+
+    # define all ~gaussian priors (ignore uniform)
+
+    ## scalar (truncnorm)
+    sigma_est = np.sqrt(np.mean(y_unc_filt ** 2))
+    myclip_low = -2 * sigma_est
+    myclip_high = 2 * sigma_est
+    low, high = (myclip_low - 0) / sigma_est, (myclip_high - 0) / sigma_est
+    rv = truncnorm(low, high, loc=0, scale=sigma_est)
+    ln_scalar = np.log(rv.pdf(chains_filt.posterior.scalar))
+
+    ## Amplitude (truncnorm)
+    amp_guess = np.max(y_obs_filt)
+    myclip_low_amp = 0
+    myclip_high_amp = 3 * amp_guess
+    low_amp, high_amp = (myclip_low_amp - amp_guess) / (amp_guess / 10), (myclip_high_amp - amp_guess) / (
+                amp_guess / 10)
+    rv_2 = truncnorm(low_amp, high_amp, loc=amp_guess, scale=amp_guess / 10)
+    ln_amp = np.log(rv_2.pdf(chains_filt.posterior.Amplitude))
+
+    ## Gamma (normal mixture)
+    mixture_gaussian_model = MixtureModel(
+        [norm(5, 5), norm(5, 5), norm(60, 30)])  # cheat the 2/3 and 1/3 weights by mixing 3 normals
+    ln_gamma = np.log(mixture_gaussian_model.pdf(chains_filt.posterior.gamma))
+
+    # posterior calc
+    ln_posterior = summed + ln_scalar + ln_amp + ln_gamma
+    return ln_posterior
+
+# --- ---
 
 def plot_posterior_draws_numpyro(sn, lc_path='', out_path='', save_fig=True):
     """
