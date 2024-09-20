@@ -8,6 +8,7 @@ import numpy as np
 import arviz as az
 import pandas as pd
 from scipy.stats import median_abs_deviation
+from numpyro.infer.initialization import init_to_mean, init_to_uniform
 
 import argparse
 
@@ -165,7 +166,7 @@ def lc_model(t_val, Y_unc_val, Y_observed_val=None):
                    dist.Normal(mu_switch, Y_unc_val),
                    obs=Y_observed_val)
 
-def fit_gr_numpyro(sn, lc_path, out_path, num_warmup=15000, num_samples=1000, num_chains=4, model=lc_model):
+def fit_gr_numpyro(sn, lc_path, out_path, num_warmup=15000, num_samples=1000, num_chains=4, init_strat='uniform', model=lc_model):
     """
     Fit parametric model from Villar+19 to ZTF light curve
 
@@ -190,6 +191,9 @@ def fit_gr_numpyro(sn, lc_path, out_path, num_warmup=15000, num_samples=1000, nu
         Number of chains to run MCMC, make sure num_chains =< jax.local_device_count()
         ( you can change device count using: numpyro.set_host_device_count(#) )
 
+    init_strat : str (optional, default = 'uniform')
+        Number of chains to run MCMC, make sure num_chains =< jax.local_device_count()
+        ( you can change device count using: numpyro.set_host_device_count(#) )
 
     model : function (optional, default = lc_model)
         numpyro modeling function, either hierarchical (WIP) or non-hierarchical (lc_model)
@@ -211,8 +215,15 @@ def fit_gr_numpyro(sn, lc_path, out_path, num_warmup=15000, num_samples=1000, nu
 
         Y_unc = ((lc_df_thisfilt['fnu_microJy_unc']).values)
 
+        if init_strat == 'uniform':
+            init_strategy = init_to_uniform
+        elif init_strat == 'mean':
+            init_strategy = init_to_mean
+        else:
+            print('could not define initialization strategy based on input!')
+
         sampler = infer.MCMC(
-            infer.NUTS(model),
+            infer.NUTS(model, init_strategy = init_strategy),
             num_warmup=num_warmup,
             num_samples=num_samples,
             num_chains=num_chains,
@@ -405,6 +416,8 @@ def main():
                         help='number of samples for MCMC')
     parser.add_argument('num_chains', type=int, nargs='?', default=None,
                         help='number of chains for MCMC')
+    parser.add_argument('init_strat', type=str, nargs='?', default=None,
+                        help='initialization strategy for MCMC')
 
     try:
         args = parser.parse_args()
