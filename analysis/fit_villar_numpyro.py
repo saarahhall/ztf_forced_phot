@@ -357,6 +357,33 @@ def plot_posterior_draws_numpyro(sn, lc_path='', out_path='', save_fig=True):
                     lc_df_thisfilt.fnu_microJy_unc.values,
                     fmt='o', color=color_dict[pb])
 
+        # max posterior plot
+        post = posterior_from_chains(chains,
+                                     lc_df_thisfilt['fnu_microJy'],
+                                     lc_df_thisfilt['fnu_microJy_unc'])
+        pi_max_index = np.argmax(post.flatten())
+        pi_max_t0 = chains.posterior.t0.values.flatten()[pi_max_index]
+        pi_max_amp = chains.posterior.Amplitude.values.flatten()[pi_max_index]
+        pi_max_beta = chains.posterior.Beta.values.flatten()[pi_max_index]
+        pi_max_gamma = chains.posterior.gamma.values.flatten()[pi_max_index]
+        pi_max_trise = chains.posterior.trise.values.flatten()[pi_max_index]
+        pi_max_tfall = chains.posterior.tfall.values.flatten()[pi_max_index]
+        pi_max_scalar = chains.posterior.scalar.values.flatten()[pi_max_index]
+
+        t_grid = jnp.linspace(pi_max_t0 - 150,
+                              jnp.max(lc_df_thisfilt.jd.values) - jd0,
+                              num=20000)
+        ax.plot(t_grid,
+                calc_sn_exp_both(t_grid,
+                                 pi_max_amp,
+                                 pi_max_beta,
+                                 pi_max_t0,
+                                 pi_max_gamma,
+                                 pi_max_trise,
+                                 pi_max_tfall,
+                                 pi_max_scalar),
+                color=color_dict[pb])
+
         # posterior samples
         n_samples = len(chains.posterior.t0.values.flatten())
         rand_idx = np.random.choice(range(n_samples),
@@ -370,7 +397,7 @@ def plot_posterior_draws_numpyro(sn, lc_path='', out_path='', save_fig=True):
         pi_scalar = chains.posterior.scalar.values.flatten()[rand_idx]
 
         t_grid = jnp.linspace(pi_t0 - 150,
-                              jnp.max(lc_df_thisfilt.jd.values) - jd0,
+                              np.max(lc_df_thisfilt.jd.values) - jd0,
                               num=20000)
         ax.plot(t_grid,
                 calc_sn_exp_both(t_grid,
@@ -384,15 +411,19 @@ def plot_posterior_draws_numpyro(sn, lc_path='', out_path='', save_fig=True):
                 color=color_dict[pb], ls='--', lw=0.6, alpha=0.3)
 
         ax.set_xlabel('Time (JD - 2018 Jan 01)', fontsize=14)
-        # xlim may be unstable, since we're picking a random posterior instead of the max. prob. posterior
-        x_max = np.min([pi_t0[0] + pi_gamma[0] + 10 * pi_tfall[0],
+        x_max = np.min([pi_max_t0 + pi_max_gamma + 10 * pi_max_tfall,
                         np.max(lc_df_thisfilt.jd.values) - jd0 + 10])
-        ax.set_xlim(pi_t0[0] - 75, x_max)
-        ax.set_ylim(-3 * median_abs_deviation(lc_df_thisfilt.fnu_microJy.values),
-                    1.2 * jnp.percentile(lc_df_thisfilt.fnu_microJy.values, 99.5))
+        if filt == 'r':  ### set axis limits based on r-band,
+            ## since pymc runs likely did this
+            ## (as in, numpyro will fit i-band (unlike pymc)
+            ## and will set limits based on i-band since
+            ## we're looping over filts)
+            ax.set_xlim(pi_max_t0 - 75, x_max)
+            ax.set_ylim(-3 * median_abs_deviation(lc_df_thisfilt.fnu_microJy.values),
+                        1.2 * np.percentile(lc_df_thisfilt.fnu_microJy.values, 99.5))
         ax.set_ylabel(r'Flux ($\mu$Jy)', fontsize=14)
         ax.tick_params(axis='both', which='major', labelsize=12)
-        #fig.subplots_adjust(left=0.8, bottom=0.13, right=0.99, top=0.99)
+        # fig.subplots_adjust(left=0.8, bottom=0.13, right=0.99, top=0.99)
         if save_fig:
             fig.savefig(f"{lc_path}/{sn}_posterior_numpyro.png",
                         dpi=600, transparent=True)
