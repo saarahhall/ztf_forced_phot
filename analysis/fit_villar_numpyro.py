@@ -8,7 +8,7 @@ import numpy as np
 import arviz as az
 import pandas as pd
 from scipy.stats import median_abs_deviation, truncnorm, rv_continuous, norm
-from numpyro.infer.initialization import init_to_mean, init_to_uniform
+from numpyro.infer.initialization import init_to_mean, init_to_uniform, init_to_value
 
 import argparse
 
@@ -166,7 +166,7 @@ def lc_model(t_val, Y_unc_val, Y_observed_val=None):
                    dist.Normal(mu_switch, Y_unc_val),
                    obs=Y_observed_val)
 
-def fit_gr_numpyro(sn, lc_path, out_path, num_warmup=15000, num_samples=1000, num_chains=4, init_strat='uniform', model=lc_model):
+def fit_gr_numpyro(sn, lc_path, out_path, num_warmup=15000, num_samples=1000, num_chains=4, init_strat='uniform', model=lc_model, init_values = None):
     """
     Fit parametric model from Villar+19 to ZTF light curve
 
@@ -219,6 +219,11 @@ def fit_gr_numpyro(sn, lc_path, out_path, num_warmup=15000, num_samples=1000, nu
             init_strategy = init_to_uniform
         elif init_strat == 'mean':
             init_strategy = init_to_mean
+        elif init_strat == 'value':
+            if init_values is not None:
+                init_strategy = init_to_value(values = init_values)
+            else:
+                print('could not use init_to_value, missing values')
         else:
             print('could not define initialization strategy based on input!')
 
@@ -472,11 +477,8 @@ def plot_posterior_draws_numpyro(sn, lc_path='', out_path='', save_fig=True):
         ax.set_xlabel('Time (JD - 2018 Jan 01)', fontsize=14)
         x_max = np.min([pi_max_t0 + pi_max_gamma + 10 * pi_max_tfall,
                         np.max(lc_df_thisfilt.jd.values) - jd0 + 10])
-        if filt == 'r':  ### set axis limits based on r-band,
-            ## since pymc runs likely did this
-            ## (as in, numpyro will fit i-band (unlike pymc)
-            ## and will set limits based on i-band since
-            ## we're looping over filts)
+        if filt != 'i': ## make sure to NOT set axis limits based on i-band
+        
             ax.set_xlim(pi_max_t0 - 75, x_max)
             ax.set_ylim(-3 * median_abs_deviation(lc_df_thisfilt.fnu_microJy.values),
                         1.2 * np.percentile(lc_df_thisfilt.fnu_microJy.values, 99.5))
