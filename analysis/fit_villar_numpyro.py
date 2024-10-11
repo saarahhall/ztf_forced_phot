@@ -104,7 +104,7 @@ def load_lc_df(sn, lc_path, min_num_obs=10):
             keep_ind.append(pb_lc[0])
     if len(keep_ind) == 0:
         print(f"{sn} has 0 data points passing quality cuts; skipping this source")
-    
+
     lc_df_clean = lc_df.iloc[np.concatenate(keep_ind)]
     return lc_df_clean
 
@@ -406,6 +406,7 @@ def plot_posterior_draws_numpyro(sn, lc_path='', out_path='', save_fig=True):
 
     lc_df = load_lc_df(sn, lc_path)
     fig, ax = plt.subplots(figsize=(10, 4))
+    xlims, ylims = [], []
     for pb in lc_df.passband.unique():
         filt = pb[-1]
 
@@ -476,20 +477,32 @@ def plot_posterior_draws_numpyro(sn, lc_path='', out_path='', save_fig=True):
                                  pi_scalar),
                 color=color_dict[pb], ls='--', lw=0.6, alpha=0.3)
 
-        ax.set_xlabel('Time (JD - 2018 Jan 01)', fontsize=14)
+        
         x_max = np.min([pi_max_t0 + pi_max_gamma + 10 * pi_max_tfall,
                         np.max(lc_df_thisfilt.jd.values) - jd0 + 10])
-        if filt != 'i': ## make sure to NOT set axis limits based on i-band
-            ax.set_xlim(pi_max_t0 - 75, x_max)
-            ax.set_ylim(-3 * median_abs_deviation(lc_df_thisfilt.fnu_microJy.values),
-                        1.2 * np.percentile(lc_df_thisfilt.fnu_microJy.values, 99.5))
-        ax.set_ylabel(r'Flux ($\mu$Jy)', fontsize=14)
-        ax.tick_params(axis='both', which='major', labelsize=12)
-        # fig.subplots_adjust(left=0.8, bottom=0.13, right=0.99, top=0.99)
-        if save_fig:
-            fig.savefig(f"{lc_path}/{sn}_posterior_numpyro.png",
-                        dpi=600, transparent=True)
+        #if filt != 'i': ## make sure to NOT set axis limits based on i-band
+        # save axis limits based on this filter
+        xlims.append((pi_max_t0 - 75, x_max))
+        ylims.append((-3 * median_abs_deviation(lc_df_thisfilt.fnu_microJy.values),
+                        1.2 * np.percentile(lc_df_thisfilt.fnu_microJy.values, 99.5)))
 
+    # choose largest axis lims between all filters
+    #choose_x = np.argmax([pair[1]-pair[0] for pair in xlims])
+    #choose_y = np.argmax([pair[1]-pair[0] for pair in ylims])
+    #ax.set_xlim(xlims[choose_x][0], xlims[choose_x][1])
+    #ax.set_ylim(ylims[choose_y][0], ylims[choose_y][1])
+    # choose min and max of all lims
+    ax.set_xlim(np.min([i[0] for i in xlims]), np.max([i[1] for i in xlims]))
+    ax.set_ylim(np.min([i[0] for i in ylims]), np.max([i[1] for i in ylims]))
+
+    # labels and save figure
+    ax.set_xlabel('Time (JD - 2018 Jan 01)', fontsize=14)
+    ax.set_ylabel(r'Flux ($\mu$Jy)', fontsize=14)
+    ax.tick_params(axis='both', which='major', labelsize=12)
+    if save_fig:
+        fig.savefig(f"{lc_path}/{sn}_posterior_numpyro.png",
+                    dpi=600, transparent=True)
+    
 def main():
 
     # Initialize argument parser
