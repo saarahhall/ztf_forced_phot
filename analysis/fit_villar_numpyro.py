@@ -484,13 +484,8 @@ def plot_posterior_draws_numpyro(sn, lc_path='', out_path='', save_fig=True):
         # save axis limits based on this filter
         xlims.append((pi_max_t0 - 75, x_max))
         ylims.append((-3 * median_abs_deviation(lc_df_thisfilt.fnu_microJy.values),
-                        1.2 * np.percentile(lc_df_thisfilt.fnu_microJy.values, 99.5)))
+                        1.5 * np.percentile(lc_df_thisfilt.fnu_microJy.values, 99.5)))
 
-    # choose largest axis lims between all filters
-    #choose_x = np.argmax([pair[1]-pair[0] for pair in xlims])
-    #choose_y = np.argmax([pair[1]-pair[0] for pair in ylims])
-    #ax.set_xlim(xlims[choose_x][0], xlims[choose_x][1])
-    #ax.set_ylim(ylims[choose_y][0], ylims[choose_y][1])
     # choose min and max of all lims
     ax.set_xlim(np.min([i[0] for i in xlims]), np.max([i[1] for i in xlims]))
     ax.set_ylim(np.min([i[0] for i in ylims]), np.max([i[1] for i in ylims]))
