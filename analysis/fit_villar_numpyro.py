@@ -102,7 +102,9 @@ def load_lc_df(sn, lc_path, min_num_obs=10):
             continue
         else:
             keep_ind.append(pb_lc[0])
-
+    if len(keep_ind) == 0:
+        print(f"{sn} has 0 data points passing quality cuts; skipping this source")
+    
     lc_df_clean = lc_df.iloc[np.concatenate(keep_ind)]
     return lc_df_clean
 
@@ -478,7 +480,6 @@ def plot_posterior_draws_numpyro(sn, lc_path='', out_path='', save_fig=True):
         x_max = np.min([pi_max_t0 + pi_max_gamma + 10 * pi_max_tfall,
                         np.max(lc_df_thisfilt.jd.values) - jd0 + 10])
         if filt != 'i': ## make sure to NOT set axis limits based on i-band
-        
             ax.set_xlim(pi_max_t0 - 75, x_max)
             ax.set_ylim(-3 * median_abs_deviation(lc_df_thisfilt.fnu_microJy.values),
                         1.2 * np.percentile(lc_df_thisfilt.fnu_microJy.values, 99.5))
