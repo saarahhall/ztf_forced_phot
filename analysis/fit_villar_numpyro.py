@@ -142,7 +142,7 @@ def lc_model(t_val, Y_unc_val, Y_observed_val=None):
     #    low=jnp.array(t_val)[jnp.argmax(Y_observed_val)] - 25,
     #    high=jnp.array(t_val)[jnp.argmax(Y_observed_val)] + 25))
     t0_uniform_prior_center = jnp.array(t_val)[jnp.argmax(Y_observed_val)]
-    t0 = numpyro.sample("t0", dist.Normal(mu=t0_uniform_prior_center - 10, sigma=10))
+    t0 = numpyro.sample("t0", dist.Normal(t0_uniform_prior_center - 10, 10))
 
     sigma_est = jnp.sqrt(jnp.mean(Y_unc_val ** 2))
     scalar = numpyro.sample("scalar", dist.TruncatedNormal(loc=0, scale=sigma_est,
