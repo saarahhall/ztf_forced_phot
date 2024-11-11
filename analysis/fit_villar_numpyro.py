@@ -226,10 +226,12 @@ def fit_gr_numpyro(sn, lc_path, out_path, num_warmup=15000, num_samples=1000, nu
         elif init_strat == 'mean':
             init_strategy = init_to_mean
         elif init_strat == 'value':
-            if init_values is not None:
-                init_strategy = init_to_value(values = init_values)
-            else:
-                print('could not use init_to_value, missing values')
+            print('warning: init_to_value is hardcoded')
+            init_strategy = init_to_value(values = {"trise": 4, "tfall": 150, "Beta": 0, "scalar": 0, "gamma": 70/3})
+            #if init_values is not None:
+            #    init_strategy = init_to_value(values = init_values)
+            #else:
+            #    print('could not use init_to_value, missing values')
         else:
             print('could not define initialization strategy based on input!')
 
@@ -523,8 +525,8 @@ def main():
                         help='number of chains for MCMC')
     parser.add_argument('init_strat', type=str, nargs='?', default=None,
                         help='initialization strategy for MCMC')
-    parser.add_argument('init_values', type=dict, nargs='?', default=None,
-                        help='values for with initialize-to-value strategy')
+    #parser.add_argument('init_values', type=dict, nargs='?', default=None,
+    #                    help='values for with initialize-to-value strategy')
 
     try:
         args = parser.parse_args()
