@@ -227,7 +227,7 @@ def fit_gr_numpyro(sn, lc_path, out_path, num_warmup=15000, num_samples=1000, nu
             init_strategy = init_to_mean
         elif init_strat == 'value':
             print('warning: init_to_value is hardcoded')
-            init_strategy = init_to_value(values = {"trise": 4, "tfall": 150, "Beta": 0, "scalar": 0, "gamma": 70/3})
+            init_strategy = init_to_value(values = {"trise": 4.0, "tfall": 150.0, "Beta": 0.0, "scalar": 0.0, "gamma": 23.33})
             #if init_values is not None:
             #    init_strategy = init_to_value(values = init_values)
             #else:
