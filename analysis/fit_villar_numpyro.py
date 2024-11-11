@@ -227,7 +227,11 @@ def fit_gr_numpyro(sn, lc_path, out_path, num_warmup=15000, num_samples=1000, nu
             init_strategy = init_to_mean
         elif init_strat == 'value':
             print('warning: init_to_value is hardcoded')
-            init_strategy = init_to_value(values = {"trise": 4.0, "tfall": 150.0, "Beta": 0.0, "scalar": 0.0, "gamma": 23.33})
+            Amp_Guess = jnp.max(Y_observed)
+            # gaussian t0 center
+            t0_uniform_prior_center = jnp.array(time_axis)[jnp.argmax(Y_observed)] - 10
+            init_strategy = init_to_value(values = {"trise": 4.0, "tfall": 150.0, "Beta": 0.0, "scalar": 0.0, "gamma": 23.33,
+                                                    "Amplitude": Amp_Guess, "t0": t0_uniform_prior_center})
             #if init_values is not None:
             #    init_strategy = init_to_value(values = init_values)
             #else:
