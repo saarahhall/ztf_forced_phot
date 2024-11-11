@@ -523,6 +523,8 @@ def main():
                         help='number of chains for MCMC')
     parser.add_argument('init_strat', type=str, nargs='?', default=None,
                         help='initialization strategy for MCMC')
+    parser.add_argument('init_values', type=dict, nargs='?', default=None,
+                        help='values for with initialize-to-value strategy')
 
     try:
         args = parser.parse_args()
