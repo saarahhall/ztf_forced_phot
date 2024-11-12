@@ -135,15 +135,15 @@ def lc_model(t_val, Y_unc_val, Y_observed_val=None):
         loc=Amp_Guess,
         scale=Amp_Guess / 10, low=0))
 
-    #Beta = numpyro.sample("Beta", dist.Uniform(low=-jnp.max(Y_observed_val) / 150, high=0))
-    uniformbeta_low = -jnp.max(Y_observed_val) / 150
-    Beta = numpyro.sample("Beta", dist.Normal(0, uniformbeta_low * (-0.3)))
+    Beta = numpyro.sample("Beta", dist.Uniform(low=-jnp.max(Y_observed_val) / 150, high=0))
+    #uniformbeta_low = -jnp.max(Y_observed_val) / 150
+    #Beta = numpyro.sample("Beta", dist.Normal(0, uniformbeta_low * (-0.3)))
 
-    #t0 = numpyro.sample("t0", dist.Uniform(
-    #    low=jnp.array(t_val)[jnp.argmax(Y_observed_val)] - 25,
-    #    high=jnp.array(t_val)[jnp.argmax(Y_observed_val)] + 25))
-    t0_uniform_prior_center = jnp.array(t_val)[jnp.argmax(Y_observed_val)]
-    t0 = numpyro.sample("t0", dist.Normal(t0_uniform_prior_center - 10, 10))
+    t0 = numpyro.sample("t0", dist.Uniform(
+        low=jnp.array(t_val)[jnp.argmax(Y_observed_val)] - 25,
+        high=jnp.array(t_val)[jnp.argmax(Y_observed_val)] + 25))
+    #t0_uniform_prior_center = jnp.array(t_val)[jnp.argmax(Y_observed_val)]
+    #t0 = numpyro.sample("t0", dist.Normal(t0_uniform_prior_center - 10, 10))
 
     sigma_est = jnp.sqrt(jnp.mean(Y_unc_val ** 2))
     scalar = numpyro.sample("scalar", dist.TruncatedNormal(loc=0, scale=sigma_est,
