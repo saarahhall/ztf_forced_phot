@@ -126,7 +126,8 @@ def lc_model(t_val, Y_unc_val, Y_observed_val=None):
     """
 
     # Define priors based on Villar+19
-    trise = numpyro.sample("trise", dist.Uniform(low=0.01, high=50))  # dist.continuous.Uniform?
+    #trise = numpyro.sample("trise", dist.Uniform(low=0.01, high=50))  # dist.continuous.Uniform?
+    trise = numpyro.sample("trise", dist.TruncatedNormal(loc=6, scale=2, low=0))
     tfall = numpyro.sample("tfall", dist.Uniform(low=1, high=300))
 
     Amp_Guess = jnp.max(Y_observed_val)
