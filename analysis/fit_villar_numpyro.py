@@ -61,6 +61,19 @@ def calc_sn_exp_both(t, A, B, t0, gamma, trise, tfall, offset):
                             (1 + jnp.exp(-(t - t0) / trise))))
     return f
 
+def y_model_superphot_plus(t, A, B, t0, gamma, trise, tfall, offset):
+    """eq. (1) from superphot_plus paper"""
+    f = jnp.where(t - t0 < gamma,
+                  
+                 ((A * (1 - (B * (t - t0)))) / (1 + jnp.exp(-(t - t0) / trise))) + offset,
+                 
+                  offset + (
+                      (A * (1 - (B * gamma))) *
+                            jnp.exp((gamma - (t - t0)) / tfall)
+                      /
+                            (1 + jnp.exp(-(t - t0) / trise))
+                           ))
+    return f
 
 def load_lc_df(sn, lc_path, min_num_obs=10):
     """
@@ -108,6 +121,102 @@ def load_lc_df(sn, lc_path, min_num_obs=10):
     lc_df_clean = lc_df.iloc[np.concatenate(keep_ind)]
     return lc_df_clean
 
+class TruncatedLogNormal(dist.Distribution):
+    def __init__(self, loc, scale, low, high, **kwargs):
+        # Log-normal parameters
+        self.loc = loc
+        self.scale = scale
+        self.low = low
+        self.high = high
+        super().__init__(**kwargs)
+
+    def sample(self, key, sample_shape=()):
+        # Sample from the log-normal distribution
+        log_normal_sample = dist.LogNormal(self.loc, self.scale).sample(key, sample_shape)
+        
+        # Apply truncation: enforce that the sample lies within [low, high]
+        return jnp.clip(log_normal_sample, self.low, self.high)
+
+    def log_prob(self, value):
+        # The log probability density function for truncated log-normal
+        # Apply truncation bounds in the log-prob calculation.
+        if jnp.any((value < self.low) | (value > self.high)):
+            return -jnp.inf  # Outside the bounds
+        
+        # Compute the log-probability of the log-normal distribution
+        log_prob = dist.LogNormal(self.loc, self.scale).log_prob(value)
+        return log_prob
+
+def villar_fit_constraint(x):
+    beta, gamma, tau_rise, tau_fall = x
+    return (
+        jnp.maximum(gamma - (1.0 - beta * tau_fall) / beta, 0.) +
+        jnp.maximum(jnp.exp(-gamma / tau_rise) * (1.0/beta - tau_rise - gamma) - tau_rise, 0.)
+    )
+
+def lc_model_superphot(t_val, Y_unc_val, Y_observed_val=None):
+    """
+    (Non-hierarchical) model for ZTF light curves, with priors based on superphot_plus/.../numpyro_sampler.py
+
+    Parameters
+    ----------
+    t_val : array-like
+        Time values at which the model is evaluated
+
+    Y_unc_val : array-like
+        Flux uncertainties at the observed times t_val
+
+    Y_observed_val : array-like (optional, default = None)
+        Flux observations at times t_val
+    """
+    # Superphot+ priors
+    ## Define priors based on superphot_plus/surveys/ztf.yaml (reference, works for r-band)
+    Amplitude = 10 ** numpyro.sample("logA", dist.TruncatedNormal(loc=0.0957,
+                                                                    scale=0.0575,
+                                                                    low=-0.3, high=0.5))
+    ### max_flux = jnp.max(Y_observed_val) # TODO REMOVE MAXFLUC FROM DATA
+
+    Beta = numpyro.sample("beta", dist.TruncatedNormal(loc=0.00833,
+                                                        scale=0.00385,
+                                                        low=0, high=0.03))
+
+    gamma = 10 ** numpyro.sample("log_gamma", dist.TruncatedNormal(loc=1.4258, scale=0.3079, low=0, high=3.5))
+
+    tFmax = jnp.array(t_val)[jnp.argmax(Y_observed_val)]
+    t0 = numpyro.sample("t0", dist.TruncatedNormal(loc=tFmax - 17.878,
+                                                    scale=9.916,
+                                                    low=tFmax - 100, high=tFmax + 30))
+
+    trise = 10 ** numpyro.sample("log_trise", dist.TruncatedNormal(loc=0.6664, 
+                                                                    scale=0.4250, 
+                                                                    low=-2, high=4))
+
+    tfall = 10 ** numpyro.sample("log_tfall", dist.TruncatedNormal(loc=1.5261,
+                                                                    scale=0.3037,
+                                                                    low=0, high=4))
+    
+    extra_sigma = 10 ** numpyro.sample("log_extra_sigma", dist.TruncatedNormal(loc=-1.6629,
+                                                                                scale=0.3378,
+                                                                                low=-3, high=-0.8))
+    
+
+    constraint = villar_fit_constraint([Beta, gamma, trise, tfall])
+    numpyro.factor(
+        "vf_constraint",
+        -1000. * constraint
+    )
+
+    # Uncertainties (add extra_sigma in quad.)
+    sigma_tot = jnp.sqrt(Y_unc_val**2 + extra_sigma**2)
+
+    # Expected value of outcome - note max_flux now in amplitude
+    mu_switch = y_model_superphot_plus(t_val, Amplitude, Beta, t0, gamma, trise, tfall, 
+                                 0) # note, scalar = 0
+
+    # Sample!
+    numpyro.sample("y",
+                   dist.Normal(mu_switch, sigma_tot),
+                   obs=Y_observed_val)
 
 def lc_model(t_val, Y_unc_val, Y_observed_val=None):
     """
@@ -126,8 +235,8 @@ def lc_model(t_val, Y_unc_val, Y_observed_val=None):
     """
 
     # Define priors based on Villar+19
-    #trise = numpyro.sample("trise", dist.Uniform(low=0.01, high=50))  # dist.continuous.Uniform?
-    trise = numpyro.sample("trise", dist.TruncatedNormal(loc=6, scale=2, low=0))
+    trise = numpyro.sample("trise", dist.Uniform(low=0.01, high=50))  # dist.continuous.Uniform?
+    #trise = numpyro.sample("trise", dist.TruncatedNormal(loc=6, scale=2, low=0))
     tfall = numpyro.sample("tfall", dist.Uniform(low=1, high=300))
 
     Amp_Guess = jnp.max(Y_observed_val)
@@ -175,7 +284,7 @@ def lc_model(t_val, Y_unc_val, Y_observed_val=None):
 
 def fit_gr_numpyro(sn, lc_path, out_path, num_warmup=15000, num_samples=1000, num_chains=4, init_strat='uniform', model=lc_model, init_values = None):
     """
-    Fit parametric model from Villar+19 to ZTF light curve
+    Fit parametric model from Villar+19 [OR deSoto+24] to ZTF light curve
 
     Parameters
     ----------
@@ -218,9 +327,13 @@ def fit_gr_numpyro(sn, lc_path, out_path, num_warmup=15000, num_samples=1000, nu
         jd0 = 2458119.5  # 2018 Jan 01
         time_axis = (lc_df_thisfilt['jd'].values) - jd0
 
-        Y_observed = ((lc_df_thisfilt['fnu_microJy']).values)
+        Y_observed_orig = ((lc_df_thisfilt['fnu_microJy']).values)
+        Y_observed_max = jnp.max(Y_observed_orig)
+        print(f'scaling data by dividing by Y_obserbed_max: {Y_observed_max}. keep in mind when visualizing posterior draws!!!')
+        Y_observed = Y_observed_orig / Y_observed_max
 
-        Y_unc = ((lc_df_thisfilt['fnu_microJy_unc']).values)
+        Y_unc_orig = ((lc_df_thisfilt['fnu_microJy_unc']).values)
+        Y_unc = ((lc_df_thisfilt['fnu_microJy_unc']).values) / Y_observed_max
 
         if init_strat == 'uniform':
             init_strategy = init_to_uniform
