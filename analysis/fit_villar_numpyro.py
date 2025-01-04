@@ -75,6 +75,20 @@ def y_model_superphot_plus(t, A, B, t0, gamma, trise, tfall, offset):
                            ))
     return f
 
+def y_model_superphot_plus_logs(t, logA, B, t0, log_gamma, log_trise, log_tfall, offset):
+    """eq. (1) from superphot_plus paper"""
+    f = jnp.where(t - t0 < (10**log_gamma),
+                  
+                 (((10**logA) * (1 - (B * (t - t0)))) / (1 + jnp.exp(-(t - t0) / (10**log_trise)))) + offset,
+                 
+                  offset + (
+                      ((10**logA) * (1 - (B * (10**log_gamma)))) *
+                            jnp.exp(((10**log_gamma) - (t - t0)) / (10**log_tfall))
+                      /
+                            (1 + jnp.exp(-(t - t0) / (10**log_trise)))
+                           ))
+    return f
+
 def load_lc_df(sn, lc_path, min_num_obs=10):
     """
     Load ZTF light curve (LC) into a dataframe, with quality cuts
@@ -173,33 +187,50 @@ def lc_model_superphot(t_val, Y_unc_val, Y_observed_val=None):
     ## Define priors based on superphot_plus/surveys/ztf.yaml (reference, works for r-band)
     Amplitude = 10 ** numpyro.sample("logA", dist.TruncatedNormal(loc=0.0957,
                                                                     scale=0.0575,
-                                                                    low=-0.3, high=0.5))
+                                                                    low=-0.3, high=0.5, validate_args=False))
+    #logAmplitude = numpyro.sample("logA", dist.TruncatedNormal(loc=0.0957,
+    #                                                                scale=0.0575,
+    #                                                                low=-0.3, high=0.5))
     ### max_flux = jnp.max(Y_observed_val) # TODO REMOVE MAXFLUC FROM DATA
 
     Beta = numpyro.sample("beta", dist.TruncatedNormal(loc=0.00833,
                                                         scale=0.00385,
-                                                        low=0, high=0.03))
+                                                        low=0, high=0.03, validate_args=False))
 
-    gamma = 10 ** numpyro.sample("log_gamma", dist.TruncatedNormal(loc=1.4258, scale=0.3079, low=0, high=3.5))
+    gamma = 10 ** numpyro.sample("log_gamma", dist.TruncatedNormal(loc=1.4258, scale=0.3079, low=0, high=3.5, validate_args=False))
+    #loggamma = numpyro.sample("log_gamma", dist.TruncatedNormal(loc=1.4258, scale=0.3079, low=0, high=3.5))
 
     tFmax = jnp.array(t_val)[jnp.argmax(Y_observed_val)]
     t0 = numpyro.sample("t0", dist.TruncatedNormal(loc=tFmax - 17.878,
                                                     scale=9.916,
-                                                    low=tFmax - 100, high=tFmax + 30))
+                                                    low=tFmax - 100, high=tFmax + 30, validate_args=False))
 
     trise = 10 ** numpyro.sample("log_trise", dist.TruncatedNormal(loc=0.6664, 
                                                                     scale=0.4250, 
-                                                                    low=-2, high=4))
+                                                                    low=-2, high=4, validate_args=False))
+    #logtrise = numpyro.sample("log_trise", dist.TruncatedNormal(loc=0.6664, 
+    #                                                                scale=0.4250, 
+    #                                                                low=-2, high=4))
 
     tfall = 10 ** numpyro.sample("log_tfall", dist.TruncatedNormal(loc=1.5261,
                                                                     scale=0.3037,
-                                                                    low=0, high=4))
+                                                                    low=0, high=4, validate_args=False))
+    #logtfall = numpyro.sample("log_tfall", dist.TruncatedNormal(loc=1.5261,
+    #                                                                scale=0.3037,
+    #                                                                low=0, high=4))
     
+    # NO EXTRA SIGMA????
     extra_sigma = 10 ** numpyro.sample("log_extra_sigma", dist.TruncatedNormal(loc=-1.6629,
                                                                                 scale=0.3378,
-                                                                                low=-3, high=-0.8))
+                                                                                low=-3, high=-0.8, validate_args=False))
     
+    # TEST ADDING SCALAR (although not in superphot+ models) 
+    #sigma_est = jnp.sqrt(jnp.mean(Y_unc_val ** 2))
+    #scalar = numpyro.sample("scalar", dist.TruncatedNormal(loc=0, scale=sigma_est,
+    #                                                       low=-2 * sigma_est,
+    #                                                       high=2 * sigma_est))
 
+    # TODO: NEW LC_MODEL_LOG FITTING W CONSTRAINT
     constraint = villar_fit_constraint([Beta, gamma, trise, tfall])
     numpyro.factor(
         "vf_constraint",
@@ -211,7 +242,9 @@ def lc_model_superphot(t_val, Y_unc_val, Y_observed_val=None):
 
     # Expected value of outcome - note max_flux now in amplitude
     mu_switch = y_model_superphot_plus(t_val, Amplitude, Beta, t0, gamma, trise, tfall, 
-                                 0) # note, scalar = 0
+                                 0)#,scalar)
+    #mu_switch = y_model_superphot_plus_logs(t_val, logAmplitude, Beta, t0, loggamma, logtrise, logtfall, 
+    #                             0)#,scalar)
 
     # Sample!
     numpyro.sample("y",
@@ -282,7 +315,7 @@ def lc_model(t_val, Y_unc_val, Y_observed_val=None):
                    dist.Normal(mu_switch, Y_unc_val),
                    obs=Y_observed_val)
 
-def fit_gr_numpyro(sn, lc_path, out_path, num_warmup=15000, num_samples=1000, num_chains=4, init_strat='uniform', model=lc_model, init_values = None):
+def fit_gr_numpyro(sn, lc_path, out_path, num_warmup=15000, num_samples=1000, num_chains=4, init_strat='uniform', model=lc_model, init_values = None, randomkey=0):
     """
     Fit parametric model from Villar+19 [OR deSoto+24] to ZTF light curve
 
@@ -339,13 +372,18 @@ def fit_gr_numpyro(sn, lc_path, out_path, num_warmup=15000, num_samples=1000, nu
             init_strategy = init_to_uniform
         elif init_strat == 'mean':
             init_strategy = init_to_mean
-        elif init_strat == 'value':
+        elif init_strat == 'value':# & (model == lc_model_superphot):
             print('warning: init_to_value is hardcoded')
             Amp_Guess = jnp.max(Y_observed)
             # gaussian t0 center
-            t0_uniform_prior_center = jnp.array(time_axis)[jnp.argmax(Y_observed)] - 10
-            init_strategy = init_to_value(values = {"trise": 4.0, "tfall": 150.0, "Beta": 0.0, "scalar": 0.0, "gamma": 23.33,
-                                                    "Amplitude": Amp_Guess, "t0": t0_uniform_prior_center})
+            #t0_uniform_prior_center = jnp.array(time_axis)[jnp.argmax(Y_observed)] - 10
+
+            ## VALUES FOR ZTF18abxoqkd; superphot+ translated but linear
+            #init_strategy = init_to_value(values = {"logA": 1.0573, "beta": 0.0022, "t0": 1408.2236, "log_gamma": 10.5832,
+            #                                        "log_trise": 2.3345, "log_tfall": 17.1516, "scalar": 0})
+            # logged vers.
+            init_strategy = init_to_value(values = {"logA": np.log10(1.0573), "beta": 0.0022, "t0": 1408.2236, "log_gamma": np.log10(10.5832),
+                                                    "log_trise": np.log10(2.3345), "log_tfall": np.log10(17.1516), "scalar": 0})
             #if init_values is not None:
             #    init_strategy = init_to_value(values = init_values)
             #else:
@@ -358,13 +396,14 @@ def fit_gr_numpyro(sn, lc_path, out_path, num_warmup=15000, num_samples=1000, nu
             num_warmup=num_warmup,
             num_samples=num_samples,
             num_chains=num_chains,
-            progress_bar=True)
-        sampler.warmup(jax.random.PRNGKey(0), time_axis, Y_unc, Y_observed_val=Y_observed, collect_warmup=True)
+            progress_bar=True,
+            chain_method="parallel")
+        sampler.warmup(jax.random.PRNGKey(randomkey), time_axis, Y_unc, Y_observed_val=Y_observed, collect_warmup=True)
         warmup_samples = sampler.get_samples()
         np.save(f'{out_path}/{sn}_{filt}_warmupsamples.npy', warmup_samples)
 
         # Draw samples from the posterior
-        sampler.run(jax.random.PRNGKey(0), time_axis, Y_unc, Y_observed_val=Y_observed)
+        sampler.run(jax.random.PRNGKey(randomkey), time_axis, Y_unc, Y_observed_val=Y_observed)
         samples = sampler.get_samples()
         np.save(f'{out_path}/{sn}_{filt}_samples.npy', samples)
 
