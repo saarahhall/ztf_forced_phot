@@ -398,14 +398,14 @@ def fit_gr_numpyro(sn, lc_path, out_path, num_warmup=15000, num_samples=1000, nu
             num_chains=num_chains,
             progress_bar=True,
             chain_method="parallel")
-        sampler.warmup(jax.random.PRNGKey(randomkey), time_axis, Y_unc, Y_observed_val=Y_observed, collect_warmup=True)
-        warmup_samples = sampler.get_samples()
-        np.save(f'{out_path}/{sn}_{filt}_warmupsamples.npy', warmup_samples)
+        #sampler.warmup(jax.random.PRNGKey(randomkey), time_axis, Y_unc, Y_observed_val=Y_observed, collect_warmup=True)
+        #warmup_samples = sampler.get_samples()
+        #np.save(f'{out_path}/{sn}_{filt}_warmupsamples.npy', warmup_samples)
 
         # Draw samples from the posterior
         sampler.run(jax.random.PRNGKey(randomkey), time_axis, Y_unc, Y_observed_val=Y_observed)
-        samples = sampler.get_samples()
-        np.save(f'{out_path}/{sn}_{filt}_samples.npy', samples)
+        #samples = sampler.get_samples()
+        #np.save(f'{out_path}/{sn}_{filt}_samples.npy', samples)
 
         # Save results
         data = az.from_numpyro(sampler)
