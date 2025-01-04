@@ -315,7 +315,7 @@ def lc_model(t_val, Y_unc_val, Y_observed_val=None):
                    dist.Normal(mu_switch, Y_unc_val),
                    obs=Y_observed_val)
 
-def fit_gr_numpyro(sn, lc_path, out_path, num_warmup=15000, num_samples=1000, num_chains=4, init_strat='uniform', model=lc_model, init_values = None, randomkey=0):
+def fit_gr_numpyro(sn, lc_path, out_path, num_warmup=15000, num_samples=1000, num_chains=4, init_strat='uniform', model=lc_model_superphot, init_values = None, randomkey=0):
     """
     Fit parametric model from Villar+19 [OR deSoto+24] to ZTF light curve
 
