@@ -15,6 +15,10 @@ import glob
 import os
 
 
+
+numpyro.set_host_device_count(4)
+
+
 def y_model_villar19(t, A, B, t0, gamma, trise, tfall, offset):
     """
     Calculate the SN model from Villar+19. Incompatible with ztf priors from Superphot+
