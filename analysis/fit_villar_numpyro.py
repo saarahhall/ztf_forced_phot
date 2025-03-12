@@ -8,7 +8,7 @@ import numpy as np
 import arviz as az
 import pandas as pd
 from scipy.stats import median_abs_deviation, truncnorm, rv_continuous, norm
-from numpyro.infer.initialization import init_to_mean, init_to_uniform, init_to_value
+from numpyro.infer.initialization import init_to_mean, init_to_uniform, init_to_value, init_to_feasible, init_to_median, init_to_sample
 
 import argparse
 import glob
@@ -120,7 +120,7 @@ def y_model_superphot(t, A, B, t0, gamma, trise, tfall, offset):
                            ))
     return f
 
-def load_lc_df(sn, lc_path, min_num_obs=10):
+def load_lc_df(sn, lc_path, min_num_obs=2):#10): #TODO: REVERT THIS
     """
     Load ZTF light curve (LC) into a dataframe, with quality cuts
 
@@ -310,11 +310,11 @@ def lc_model_superphot(t_obs, Y_unc, Y_obs=None, prior_vars='old'):
     #                                                       low=-2 * sigma_est, high=2 * sigma_est))
 
     # incorporate constraint from de Soto+24 Appendix B, this adds an arbitrary log prob. factor
-    constraint = villar_fit_constraint([beta, gamma, trise, tfall])
-    numpyro.factor(
-        "vf_constraint",
-        -1000. * jnp.max(constraint)
-    )
+    #constraint = villar_fit_constraint([beta, gamma, trise, tfall])
+    #numpyro.factor(
+    #    "vf_constraint",
+    #    -1000. * jnp.max(constraint)
+    #)
 
     # define uncertainties (add extra_sigma to observed uncertainties in quad.)
     sigma_tot = jnp.sqrt(Y_unc**2 + extra_sigma**2)
@@ -448,6 +448,9 @@ def fit_gr_numpyro(sn, lc_path, out_path, num_warmup=15000, num_samples=1000, nu
         ## map input "init_strat" string to define strategy
         init_strat_dict = {'uniform' : init_to_uniform,
                        'mean': init_to_mean,
+                       'feasible': init_to_feasible,
+                       'median': init_to_median,
+                       'sample': init_to_sample,
                        'value': "need init. values"}
         this_init_strat = init_strat_dict[init_strat]
         ## specify initalization values (hardcoded for now, should only be used for testing)
@@ -461,7 +464,7 @@ def fit_gr_numpyro(sn, lc_path, out_path, num_warmup=15000, num_samples=1000, nu
                                                     "t0": truths[3], "log_gamma": truths[2],
                                                     "log_trise": truths[4], 
                                                     "log_tfall": truths[5], "scalar": truths[6]})
-        elif init_strat not in ['uniform', 'mean', 'value']:
+        elif init_strat not in ['uniform', 'mean', 'value', 'feasible', 'median', 'sample']:
             print('could not define initialization strategy based on inputs!')
             return
 
@@ -938,7 +941,7 @@ def params_table_truth_init(warmup_path, nchains, nsteps_warmup, truth_path=None
     tab_logs.index = index_names # assign row names
     return tab_logs
 
-def summary_plot(sn_name, lc_folder_path, fit_folder_path, band, is_sim, init_method, nsteps_warmup, xlim_for_draws=None, save_fig=True, jd0 = 2458119.5):
+def summary_plot(sn_name, lc_folder_path, fit_folder_path, band, is_sim, init_method, nsteps_warmup, fmax_inject = None, xlim_for_draws=None, save_fig=True, jd0 = 2458119.5):
 
     #- run and fit a simulation
     #- as output w plots for a single run;
@@ -962,7 +965,10 @@ def summary_plot(sn_name, lc_folder_path, fit_folder_path, band, is_sim, init_me
     if is_sim:
         truth_path = f'{lc_folder_path}/{sn_name}_truth.csv'
         truth = pd.read_csv(truth_path)
-        fmax_inject = 328.73734846133704 #FMax_realsn
+        #fmax_inject = 328.73734846133704 #FMax_realsn
+        if fmax_inject is None:
+            fmax_inject = 328.73734846133704 #fmax of 'ZTF18abxoqkd', model SN for fakeSN{0-4}
+            print('warning; no `fmax_inject` provided; what SN maxflux did you use to make these fake SNe?')
         fmax_eject = float(
             glob.glob(f'{fit_folder_path}/{sn_name}_{band}_maxflux*')[0].split('maxflux_')[1].split('.npy')[0])
     else:
@@ -975,51 +981,54 @@ def summary_plot(sn_name, lc_folder_path, fit_folder_path, band, is_sim, init_me
     fake_lc = pd.read_csv(fake_lc_path) 
 
     ## markers and color palettes (needed for viz. of different chains)
-    markers = [':', '-', ':', '-', ':', '-.', '--', '-']
-    chain_lws = [2, 0.9, 2, 0.9, 3,2,1,0.5]
+    markers = [':', '-', ':', '-', ':', '-', ':', '-']
+    chain_lws = [2, 0.9, 2, 0.9, 2, 0.9, 2, 0.9]
     chain_alphas = [0.9, 0.9, 0.9, 0.9 ,0.7, 0.7, 0.7, 0.7]
-    chain_cols = ['#9CA3DB', '#9CA3DB', '#677DB7', '#677DB7', 'red', 'brown', 'cornflowerblue', 'black',]
+    chain_cols = ['#9CA3DB', '#9CA3DB', '#677DB7', '#677DB7', 'red', 'brown', 'cornflowerblue', 'black','goldenrod', 'hotpink', 'green']
     truth_col = "#B52E2C" 
     post_draws_col = '#191308'
     color_dict = {'g': "MediumAquaMarine", 'r': "Crimson", 'i': "GoldenRod"}
 
 
     ## skeleton of subplots
-    fig, axes = plt.subplot_mosaic("AABC;AADE;FFGH;IIJK;LLMN", figsize=(14,8))
+    # fig, axes = plt.subplot_mosaic("AABC;AADE;FFGH;IIJK;LLMN", figsize=(14,8)) # format without SNR plot
+    fig, axes = plt.subplot_mosaic("AABC;AADE;SSGH;FXJK;ILMN", figsize=(13,9)) # format with SNR plot
     plt.rcParams['font.family'] = 'sans-serif'
     plt.rcParams['font.sans-serif'] = 'Avenir'
 
 
     ## remove underlying axes to place text instead
-    for ax_name in ["B", "C", "D"]:
+    for ax_name in ["B", "C", "D", "X"]:
         axes[ax_name].remove()
     textstart_x = 0.52
     fig.text(textstart_x, 0.96, f'fit: {fitname}')
-    fig.text(textstart_x, 0.75, f'init. method: {init_method}')
+    fig.text(textstart_x, 0.77, f'init. method: {init_method}')
     if is_sim:
         ptable = params_table_truth_init(warmupsteppath, nchains, nsteps_warmup, truth_path)
         fig.text(textstart_x, 0.82, f'\n{ptable}')
         lnl_from_truth = lnl_from_sim(fake_lc, truth, max_flux = fmax_inject) #TODO: THIS IS CRUCIAL
-        fig.text(textstart_x, 0.72, f'lnl from truth: {lnl_from_truth:.3f}')
+        fig.text(0.3, 0.35, f'lnl from truth: {lnl_from_truth:.3f}')
         post_from_sim = posterior_from_sim_superphot(fake_lc, truth, max_flux=fmax_inject)[0]
-        fig.text(textstart_x, 0.69, f'posterior from truth: {post_from_sim:.3f}')
+        fig.text(0.3, 0.3, f'posterior from truth: {post_from_sim:.3f}')
     else:
         ptable = params_table_truth_init(warmupsteppath, nchains, nsteps_warmup)
         fig.text(textstart_x, 0.82, f'\n{ptable}')
 
     ## axis lims and labels
-    axes["A"].set_xlabel('time (JD - 2018 Jan 01)')
-    axes["A"].set_ylabel(r'flux ($\mu$Jy)')
+    axes["S"].set_xlabel('time (JD - 2018 Jan 01)')
     if xlim_for_draws is not None:
         axes["A"].set_xlim(xlim_for_draws[0], xlim_for_draws[1])
-    for ax_name in ['L', 'M', 'N']:
+        axes["S"].set_xlim(xlim_for_draws[0], xlim_for_draws[1])
+    for ax_name in ['L', 'M', 'N', 'I', 'L']:
         axes[ax_name].set_xlabel('step #')
-    for ax_name in ['E', 'F', 'I', 'G', 'H', 'J', 'K']:
+    for ax_name in ['E', 'F', 'G', 'H', 'J', 'K', 'S', 'X']:
         axes[ax_name].set_xticks([])
         axes[ax_name].set_xticklabels([])
+    axes["A"].set_ylabel(r'flux ($\mu$Jy)')
+    axes["S"].set_ylabel('SNR')
     axes["F"].set_ylabel('lnl (numpyro)')
     axes["I"].set_ylabel('lnl (saarah)')
-    axes["L"].set_ylabel('posterior (saarah)')
+    axes["L"].set_ylabel('posterior (saarah)') 
 
 
     ## lnl and posterior plots
@@ -1056,7 +1065,7 @@ def summary_plot(sn_name, lc_folder_path, fit_folder_path, band, is_sim, init_me
     ## one legend for all chain-based plots
     lines_labels = [ax.get_legend_handles_labels() for ax in fig.axes]
     lines, labels = [sum(lol, []) for lol in zip(*lines_labels)]
-    fig.legend(lines, labels, loc=(0.905,0.815))
+    fig.legend(lines, labels, loc=(0.901,0.815))
 
 
     ## posterior draws and data
@@ -1076,7 +1085,18 @@ def summary_plot(sn_name, lc_folder_path, fit_folder_path, band, is_sim, init_me
             axes["A"].plot(fits_to_plot[0], fits_to_plot[1][p], color=post_draws_col, ls='--', lw=1.2, alpha=0.3)
     axes["A"].legend()
 
+    ## SNR vs. time plot (baseline investigation)
+    SNR = (fake_lc.fnu_microJy - fake_lc.fnu_microJy_unc) / (np.sqrt(fake_lc.fnu_microJy_unc))
+    axes["S"].plot(fake_lc.jd - jd0, SNR, 's', ms=1, color='k')
+    snrplot_yspan = axes["S"].get_ylim()
+    axes["S"].axhspan(snrplot_yspan[1], 5, alpha=0.4, label = 'SNR > 5', color='darkseagreen')
+    axes["S"].axhspan(0, snrplot_yspan[0], alpha=0.4, label = 'SNR < 0', color='slategray')
+    axes["S"].legend()
+
+
     plt.tight_layout()
+    plt.subplots_adjust(hspace=0.20)
+    plt.subplots_adjust(wspace=0.30)
 
     if save_fig:
             fig.savefig(f"{fit_folder_path}/{sn_name}_fitsummary.png",
